@@ -6,7 +6,7 @@ import (
 
 	influxdb "github.com/influxdb/influxdb/client"
 	"github.com/yosisa/fluxion/buffer"
-	"github.com/yosisa/fluxion/event"
+	"github.com/yosisa/fluxion/message"
 	"github.com/yosisa/fluxion/plugin"
 )
 
@@ -17,22 +17,18 @@ func (s *Series) Size() int64 {
 }
 
 type Config struct {
-	Server   string `codec:"server"`
-	User     string `codec:"user"`
-	Password string `codec:"password"`
-	Database string `codec:"database"`
-	UseUDP   bool   `codec:"use_udp"`
-	StripTag int    `codec:"strip_tag"`
+	Server   string `toml:"server"`
+	User     string `toml:"user"`
+	Password string `toml:"password"`
+	Database string `toml:"database"`
+	UseUDP   bool   `toml:"use_udp"`
+	StripTag int    `toml:"strip_tag"`
 }
 
 type InfluxdbOutput struct {
 	env    *plugin.Env
 	conf   *Config
 	client *influxdb.Client
-}
-
-func (p *InfluxdbOutput) Name() string {
-	return "out-influxdb"
 }
 
 func (p *InfluxdbOutput) Init(env *plugin.Env) (err error) {
@@ -55,9 +51,8 @@ func (p *InfluxdbOutput) Start() (err error) {
 	return
 }
 
-func (p *InfluxdbOutput) Encode(r *event.Record) (buffer.Sizer, error) {
-	p.env.Log.Info(r.Time)
-	tag := r.Tag
+func (p *InfluxdbOutput) Encode(ev *message.Event) (buffer.Sizer, error) {
+	tag := ev.Tag
 	if p.conf.StripTag > 0 {
 		parts := strings.SplitN(tag, ".", p.conf.StripTag+1)
 		tag = parts[len(parts)-1]
@@ -67,8 +62,8 @@ func (p *InfluxdbOutput) Encode(r *event.Record) (buffer.Sizer, error) {
 		Name:    tag,
 		Columns: []string{"time"},
 	}
-	point := []interface{}{int64(float64(r.Time.UnixNano()) * 1e-6)}
-	for k, v := range r.Value {
+	point := []interface{}{int64(float64(ev.Time.UnixNano()) * 1e-6)}
+	for k, v := range ev.Record {
 		s.Columns = append(s.Columns, k)
 		point = append(point, v)
 	}
@@ -94,8 +89,12 @@ func (p *InfluxdbOutput) Write(l []buffer.Sizer) (int, error) {
 	return len(l), nil
 }
 
+func (p *InfluxdbOutput) Close() error {
+	return nil
+}
+
 func main() {
-	plugin.New(func() plugin.Plugin {
+	plugin.New("out-influxdb", func() plugin.Plugin {
 		return &InfluxdbOutput{}
 	}).Run()
 }
